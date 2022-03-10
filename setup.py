@@ -2,7 +2,7 @@ import re
 
 from setuptools import find_packages, setup
 
-with open("flask_sugar/__init__.py", "r") as f:
+with open("flask_dependant/__init__.py", "r") as f:
     version = re.search(
         r'^__version__\s*=\s*[\'"]([^\'"]*)[\'"]', f.read(), re.MULTILINE
     ).group(  # type:ignore

@@ -1,4 +1,3 @@
-import re
 from typing import (
     Callable,
     Optional,
@@ -9,7 +8,6 @@ from typing import (
     Tuple,
     Union,
     Sequence,
-    Set,
     cast,
 )
 import inspect
@@ -69,10 +67,6 @@ multipart_incorrect_install_error = (
     'And then install "python-multipart" with: \n\n'
     "pip install python-multipart\n"
 )
-
-
-def get_path_param_names(path: str) -> Set[str]:
-    return set(re.findall("<(.*?)>", path))
 
 
 def is_gen_callable(call: Callable[..., Any]) -> bool:
@@ -139,6 +133,7 @@ def create_response_field(
         raise Exception(
             f"Invalid args for response field! Hint: check that {type_} is a valid pydantic field type"
         )
+
 
 def is_scalar_field(field: ModelField) -> bool:
     field_info = field.field_info
@@ -342,7 +337,6 @@ def get_typed_annotation(param: inspect.Parameter, globalns: Dict[str, Any]) -> 
 
 def get_dependant(
     *,
-    # path: str,
     call: Callable,
     name: Optional[str] = None,
     use_cache: bool = True
@@ -647,27 +641,3 @@ def request_params_to_args(
         else:
             values[field.name] = v_
     return values, errors
-
-
-def convert_path(url_rule: str) -> str:
-    """
-    convert "/api/{id}/" to "/api/<id>/"
-    """
-    subs = []
-    for sub in str(url_rule).split("/"):
-        if "{" in sub:
-            subs.append("<{:s}>".format(sub[1:-1]))
-        else:
-            subs.append(sub)
-    return "/".join(subs)
-
-
-if __name__ == '__main__':
-    print(convert_path('/api/{zz}'))
-    # from typing import List
-    # def test(a: str = params.Query(...), m: int = params.Depends(lambda: 1)):
-    #     print(123)
-    # # from fastapi.dependencies.utils import get_dependant
-    # dependant = get_dependant(path="", call=test,)
-    # print(dependant)
-    #
