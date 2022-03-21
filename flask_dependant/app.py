@@ -1,3 +1,4 @@
+import copy
 import typing as t
 import functools
 from contextlib import ExitStack
@@ -9,6 +10,7 @@ from pydantic.fields import ModelField, Undefined
 from pydantic.error_wrappers import ErrorWrapper
 
 from flask_dependant.utils import get_dependant, get_body_field, get_parameterless_sub_dependant
+from flask_dependant.response import Response, JsonResponse
 from flask_dependant.utils import solve_dependencies
 from flask_dependant.models import Dependant
 from flask_dependant.exceptions import RequestValidationError, HTTPException
@@ -21,7 +23,9 @@ class FlaskDependant:
         self,
         exception_handlers: t.Optional[t.Dict[t.Type[Exception], t.Callable]] = None,
         dependencies: t.Optional[t.Sequence[params.Depends]] = None,
+        response_class: t.Optional[t.Type[Response]] = None
     ):
+        self.response_class = response_class or JsonResponse
         self.middlewares: t.List[t.Callable] = []
         self.dependencies = dependencies or []
         self.exception_handlers = exception_handlers or {}
@@ -43,10 +47,28 @@ class FlaskDependant:
             return inner
         return wrapper
 
-    def fork_sub_dependant(self, dependencies: t.Optional[t.Sequence[params.Depends]] = None) -> 'FlaskDependant':
-        return FlaskDependant(self.exception_handlers, self.dependencies + (dependencies or []))
+    def fork_sub_dependant(
+            self,
+            exception_handlers: t.Optional[t.Dict[t.Type[Exception], t.Callable]] = None,
+            dependencies: t.Optional[t.Sequence[params.Depends]] = None,
+            response_class: t.Optional[t.Type[Response]] = None
+    ) -> 'FlaskDependant':
+        if exception_handlers:
+            exception_handlers = copy.copy(exception_handlers)
+            for exception in self.exception_handlers:
+                if exception not in exception_handlers:
+                    exception_handlers[exception] = self.exception_handlers[exception]
+        return FlaskDependant(
+            exception_handlers or self.exception_handlers,
+            self.dependencies + (dependencies or []),
+            response_class or self.response_class
+        )
 
-    def __call__(self, dependencies: t.Optional[t.Sequence[params.Depends]] = None) -> t.Callable:
+    def __call__(
+        self,
+        dependencies: t.Optional[t.Sequence[params.Depends]] = None,
+        response_class: t.Optional[t.Type[Response]] = None,
+    ) -> t.Callable:
         def wrapper(call):
             dependant = get_dependant(call=call)
             _dependencies = self.dependencies + (dependencies or [])
@@ -56,7 +78,9 @@ class FlaskDependant:
                     get_parameterless_sub_dependant(depends=depends)
                 )
             body_field = get_body_field(dependant=dependant)
-            return self.build_flask_view_func(get_route_handler(dependant, body_field))
+            return self.build_flask_view_func(
+                get_route_handler(dependant, body_field, response_class or self.response_class)
+            )
         return wrapper
 
     def build_flask_view_func(self, view_func: t.Callable) -> t.Callable:
@@ -66,11 +90,15 @@ class FlaskDependant:
         return handler
 
 
-def get_route_handler(dependant: Dependant, body_field: t.Optional[ModelField]) -> t.Callable:
+def get_route_handler(
+        dependant: Dependant, body_field: t.Optional[ModelField],
+        response_class: t.Type[Response],
+) -> t.Callable:
     is_body_form = body_field and isinstance(body_field.field_info, params.Form)
 
     @functools.wraps(dependant.call)
     def wrapper(**flask_path_params):
+        response = response_class()
         try:
             body: t.Any = None
             if body_field:
@@ -95,21 +123,30 @@ def get_route_handler(dependant: Dependant, body_field: t.Optional[ModelField]) 
                         else:
                             body = body_bytes
         except json.JSONDecodeError as e:
-            raise RequestValidationError([ErrorWrapper(e, ("body", e.pos))], body=e.doc)
+            raise RequestValidationError([ErrorWrapper(e, ("body", e.pos))], body=e.doc, response=response)
         except Exception as e:
-            raise RequestValidationError([ErrorWrapper(e, ("body",))], body="There was an error parsing the body")
-        with ExitStack() as stack:
-            solved_result = solve_dependencies(
-                request=request,
-                dependant=dependant,
-                stack=stack,
-                is_body_form=is_body_form,
-                path_params=flask_path_params,
-                body=body,
+            raise RequestValidationError(
+                [ErrorWrapper(e, ("body",))], body="There was an error parsing the body", response=response
             )
+        with ExitStack() as stack:
+            try:
+                solved_result = solve_dependencies(
+                    request=request,
+                    response=response,
+                    dependant=dependant,
+                    stack=stack,
+                    is_body_form=is_body_form,
+                    path_params=flask_path_params,
+                    body=body,
+                )
+            except HTTPException as e:
+                e.response = response
+                raise e
+
             values, errors, _ = solved_result
             if errors:
-                raise RequestValidationError(errors, body=body)
+                raise RequestValidationError(errors, body=body, response=response)
             res = dependant.call(**values)
-        return res
+        response.set_content(res)
+        return response
     return wrapper

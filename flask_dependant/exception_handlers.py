@@ -1,23 +1,19 @@
-from flask import jsonify
-from flask import Request, Response
+from flask_dependant.response import Response, JsonResponse
 from flask_dependant.exceptions import RequestValidationError, HTTPException
 
 
 def http_exception_handler(exc: HTTPException) -> Response:
-    # headers = getattr(exc, "headers", None)
-    # if headers:
-    #     return json(
-    #         {"detail": exc.detail}, status_code=exc.status_code, headers=headers
-    #     )
-    # else:
-    return exc.resp
+    exc.response.set_content(exc.payload)
+    return exc.response
 
 
 def request_validation_exception_handler(
     exc: RequestValidationError
 ) -> Response:
-    resp = jsonify({
-        "detail": exc.errors()
-    })
+    resp = exc.response
+    if not isinstance(resp, JsonResponse):
+        resp.set_content("BAD REQUEST")
+    else:
+        resp.set_content({"detail": exc.errors()})
     resp.status_code = 422
     return resp

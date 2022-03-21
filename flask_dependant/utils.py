@@ -39,6 +39,7 @@ from pydantic.errors import MissingError
 from pydantic import BaseModel, create_model
 
 from flask_dependant.models import Dependant
+from flask_dependant.response import Response
 from flask_dependant import params
 
 sequence_shapes = {
@@ -251,6 +252,9 @@ def add_non_field_param_to_dependency(
     *, param: inspect.Parameter, dependant: Dependant
 ) -> Optional[bool]:
     """判断是否自定义的函数签名"""
+    if lenient_issubclass(param.annotation, Response):
+        dependant.response_param_name = param.name
+        return True
     return None
 
 
@@ -362,7 +366,7 @@ def get_dependant(
             param_field = get_param_field(
                 param=param,
                 param_name=param_name,
-                default_field_info=params.Path,
+                default_field_info=params.Query,
                 force_type=params.ParamTypes.path,
                 ignore_default=not isinstance(param.default, params.Path)
             )
@@ -455,6 +459,7 @@ def get_parameterless_sub_dependant(*, depends: params.Depends) -> Dependant:
 def solve_dependencies(
     *,
     request: Request,
+    response: Response,
     dependant: Dependant,
     stack: ExitStack,
     is_body_form: bool,
@@ -480,6 +485,7 @@ def solve_dependencies(
 
         solved_result = solve_dependencies(
             request=request,
+            response=response,
             is_body_form=is_body_form,
             path_params=path_params,
             dependant=use_sub_dependant,
@@ -533,6 +539,10 @@ def solve_dependencies(
         )
         values.update(body_values)
         errors.extend(body_errors)
+
+    if dependant.response_param_name:
+        values[dependant.response_param_name] = response
+
     return values, errors, dependency_cache
 
 
