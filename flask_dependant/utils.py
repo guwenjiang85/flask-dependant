@@ -277,7 +277,7 @@ def get_param_field(
     *,
     param: inspect.Parameter,
     param_name: str,
-    default_field_info: Type[params.Param] = params.Param,
+    default_field_info: Type[params.Param] = params.Path,
     force_type: Optional[params.ParamTypes] = None,
     ignore_default: bool = False
 ) -> ModelField:
@@ -313,8 +313,9 @@ def get_param_field(
     else:
         alias = field_info.alias or param.name
     # flask header首字母会自动大写
-    if isinstance(field_info, params.Header):
-        alias = alias.capitalize()
+    if isinstance(field_info, params.Header) and alias:
+        alias = alias[0].upper() + alias[1:]
+
     field = create_response_field(
         name=param.name,
         type_=annotation,
@@ -366,7 +367,7 @@ def get_dependant(
             param_field = get_param_field(
                 param=param,
                 param_name=param_name,
-                default_field_info=params.Query,
+                default_field_info=params.Path,
                 force_type=params.ParamTypes.path,
                 ignore_default=not isinstance(param.default, params.Path)
             )

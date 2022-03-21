@@ -146,7 +146,11 @@ def get_route_handler(
             values, errors, _ = solved_result
             if errors:
                 raise RequestValidationError(errors, body=body, response=response)
-            res = dependant.call(**values)
+            try:
+                res = dependant.call(**values)
+            except HTTPException as e:
+                e.response = response
+                raise e
         response.set_content(res)
         return response
     return wrapper
