@@ -491,7 +491,8 @@ def solve_dependencies(
             path_params=path_params,
             dependant=use_sub_dependant,
             stack=stack,
-            body=body
+            body=body,
+            dependency_cache=dependency_cache
         )
         (
             sub_values,
